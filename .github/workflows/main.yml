@@ -1,0 +1,61 @@
+name: Build PocketWords APK from ZIP
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PROJECT_DIR: source/PocketWords-0.4.0
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Unpack source ZIP
+        run: |
+          unzip -q PocketWords-0.4.0-source.zip -d source
+          chmod +x "$PROJECT_DIR/gradlew"
+      - name: Check build tools
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: python3 -m unittest discover -s tools -p 'test_*.py' -v
+      - name: Test and lint Android app
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: ./gradlew testDebugUnitTest lintDebug --no-daemon
+      - name: Restore persistent testing signature
+        working-directory: ${{ env.PROJECT_DIR }}
+        env:
+          POCKETWORDS_DEBUG_KEYSTORE_BASE64: ${{ secrets.POCKETWORDS_DEBUG_KEYSTORE_BASE64 }}
+        run: python3 tools/restore_debug_signing.py
+      - name: Build APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: ./gradlew assembleDebug --no-daemon
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PocketWords-0.4.0-debug-apk
+          path: source/PocketWords-0.4.0/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload check reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: check-reports
+          path: source/PocketWords-0.4.0/app/build/reports/
+          if-no-files-found: ignore
+          retention-days: 14
